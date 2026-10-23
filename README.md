@@ -1,235 +1,74 @@
-<img width="3840" height="1280" alt="1920x640-discord" src="https://github.com/user-attachments/assets/90607b26-171f-476a-90ae-69b9dbb7cb30" />
+# Parameter Golf: Small Language Model Compression Experiments
 
-<br>
-<br>
+**Recurrence, ternary quantization, and selective precision under a 16 MB model budget.**
 
-**OpenAI Model Craft Challenge: Parameter Golf** is a challenge to train the best language model that fits in a 16MB artifact and trains in under 10 minutes on 8xH100s, evaluated by compression on the FineWeb validation set (tokenizer-agnostic, bits per byte).
+This repository documents my experiments for OpenAI's Parameter Golf competition. I explored how shared transformer blocks and aggressive weight compression can improve language modeling within a fixed artifact size, using an RTX 5060 for local experiments and an RTX 5090 for a promoted run.
 
-This challenge is heavily inspired by the [NanoGPT Speedrunning](https://github.com/KellerJordan/modded-nanogpt) challenge, where participants compete to train a model that reaches 3.28 FineWeb validation loss as quickly as possible. We're excited to see how optimizing for a parameter-constrained setting pushes people toward unique architectures (test-time compute, aggressive parameter tying, depth recurrence, low-rank training, ...), compression schemes (low precision, QAT, bitnets, novel tokenizers, ...), and other creative submissions (test-time training, long context, megakernels ...). 
+**Best documented result: 1.17631839 bits per byte with a 15.50 MB artifact on one RTX 5060.** The model uses 8 unique transformer blocks for 10 effective layers, with learned embeddings to distinguish recurrent passes.
 
-If you're familiar with [neural scaling laws](https://arxiv.org/abs/2001.08361), you can consider this challenge a form of L(N) optimization, where the objective is to optimize the lowest loss given a fixed number of parameters (N) unconstrained by data, compute, steps, or architecture. Challenges like the [NanoGPT Speedrun](https://github.com/KellerJordan/modded-nanogpt), which optimizes for a form of L(T) (~lowest time given constrained loss) or the [NanoGPT Slowrun](https://github.com/qlabs-eng/slowrun), which optimizes for L(D) (lowest loss given constrained dataset size), can be thought of as equivalent challenges in this family.
+This is Shasank's competition fork of [openai/parameter-golf](https://github.com/openai/parameter-golf), now organized as a completed experiment portfolio. The featured runs are **unlimited-compute, non-record experiments**; they do not establish compliance with the 10-minute, 8×H100 leaderboard track.
 
-Ideally, we'd allow for submissions to use arbitrary computational resources. But in order to make the challenge not inaccessibly expensive, we're limiting *leaderboard submissions* to 10 minutes on 8xH100s. However, we'd still love to see submissions that don't meet the compute limitation requirements in our 'Non-record Submissions' section: We're excited to see people push the infinite frontier of parameter limited performance as well.
+[Results and lessons](docs/RESULTS.md) · [Reproduce the experiments](docs/REPRODUCING.md) · [Original competition documentation](COMPETITION.md)
 
-We also know compute is expensive, so **OpenAI is sponsoring $1,000,000 in compute credits** to help people get started training their models. To request a compute grant, use this form: [Request a Compute Grant](https://openai.com/index/parameter-golf/#credit-form).
-When requesting compute, please make sure you choose the appropriate level, write sufficient justification, and **submit with an email tied to a OpenAI / ChatGPT account**.
+## My contributions
 
-## Participant Form
+- **Depth recurrence:** adapted the training model to reuse a middle pair of transformer blocks, with learned step embeddings so repeated passes can specialize without duplicating the core weights.
+- **Ternary MLP experiments:** explored quantization-aware training and export for MLP weights, then scaled the branch to 15 layers and 20,000 training steps.
+- **Selective precision:** kept most MLP weights ternary while protecting the final MLP block with 5-bit precision; the completed hybrid run reached 1.22833292 bits per byte.
+- **Export and evaluation:** tuned bigram precision and pruning to fit the byte limit, and checked quality after exporting and reloading the compressed model.
+- **Experiment engineering:** developed checkpoint continuation, quantized-proxy validation, and log comparison workflows. The included [comparison tool](tools/compare_runs.py) lets readers inspect the archived runs without a GPU.
 
-If you enjoy solving very difficult technical problems, please introduce yourself via the [Challenge Participant Form](https://jobs.ashbyhq.com/openai/form/open-ai-challenge-parameter-golf). It helps us attribute challenge submissions and reach out about opportunities with OpenAI. _Completing the form is not required to participate._
+These changes build on the competition trainer and community methods, including mixed-bit compression, BigramHash, SmearGate, Muon optimization, and weight averaging. The original challenge, baseline, dataset pipeline, and community leaderboard entries belong to their respective authors.
 
-Many researchers at OpenAI first distinguished themselves through elite mathematics and programming competitions. The Model Craft Challenge is designed in that spirit: testing the ability to tackle unfamiliar problems with creativity and rigor, qualities we believe are essential for frontier AI research.
+## Completed results
 
-In June, we plan to hire a small cohort of early-career researchers, targeting current undergraduate students and recent graduates, including Olympiad medalists and elite competitors. For exceptional participants, the challenge may also serve as a way to stand out to OpenAI researchers and recruiters.
+Scores are FineWeb validation **bits per byte (lower is better)** after compressed-model export and reload. Sizes include the recorded code and compressed weights; MB means 1,000,000 bytes.
 
-The challenge runs from March 18th to April 30th. 
+| Experiment | Final bits/byte ↓ | Artifact | GPU | Steps | Final evaluation | Evidence |
+| --- | ---: | ---: | --- | ---: | --- | --- |
+| **Shared-block recurrence + step embeddings** | **1.17631839** | **15.50 MB** | RTX 5060 | 20,000 | Sliding window, stride 64 | [Code, log, metadata](records/track_non_record_16mb/2026-04-04_Full80_Recurrence_StepEmbed_Seq1536_20k/) |
+| 15-layer ternary + 5-bit tail MLP | 1.22833292 | 15.67 MB | RTX 5090 | 20,000 | Standard | [Code, log, metadata](records/track_non_record_16mb/2026-04-03_15L_HybridTail_Seq1536_20k_1x5090/) |
+| 15-layer ternary MLP weights | 1.30378846 | 15.04 MB | RTX 5060 | 20,000 | Standard | [Code, log, metadata](records/track_non_record_16mb/2026-03-27_15L_Ternary_MLPOnly_20k/) |
 
-Happy training!
+![Completed experiments: final bits per byte versus artifact size, with evaluation mode shown by marker](docs/assets/results.png)
 
-## Leaderboard
+These are results from different training recipes, budgets, hardware, and evaluation modes, rather than a controlled architecture comparison. The recurrence run's recorded training time is about 11.03 hours, including its initial 10k stage; final evaluation took a further 3.86 hours. See [measurement details](docs/RESULTS.md) for exact sizes, timings, and limitations. The folders preserve prepared non-record submission packages; no upstream acceptance or competition placement is claimed here.
 
-| Run | Score | Author | Summary | Date | Info |
-|-----|------:|--------|---------|------|------|
-| 11L AR Self-Gen GPTQ + XSA | 1.1147 | abaybektursun | On PR #1019: Self-Generated GPTQ Calibration Data + all-layer XSA on the PR #549 stack | 2026-03-25 | [info](records/track_10min_16mb/2026-03-25_ValCalib_GPTQ_XSA_BigramHash3072/README.md) |
-| LeakyReLU² + Legal Score-First TTT + Parallel Muon | 1.1194 | abaybektursun | On PR #549: LeakyReLU(0.5)^2 + TTT + Parallel Muon on the PR #414 stack | 2026-03-23 | [info](records/track_10min_16mb/2026-03-23_LeakyReLU_LegalTTT_ParallelMuon/README.md) |
-| 11L EMA + GPTQ-lite + warmdown3500 | 1.1228 | signalrush | On PR #374: GPTQ-lite clip search + EMA, plus warmdown3500 and QAT@0.15 | 2026-03-22 | [info](records/track_10min_16mb/2026-03-22_11L_EMA_GPTQ-lite_warmdown3500_QAT015_1.1233/README.md) |
-| 11L Partial RoPE + LN Scale + EMA + XSA4 | 1.1248 | jfprincz | On PR #287: Partial RoPE (16/64) + layerwise LN scale | 2026-03-21 | [info](records/track_10min_16mb/2026-03-21_11L_XSA4_EMA_PartialRoPE_LateQAT_1.1248/README.md) |
-| 11L XSA4 + EMA + Int6 MLP3x | 1.1271 | jfprincz | On PR #198: XSA on the last 4 layers + EMA replacing SWA | 2026-03-20 | [info](records/track_10min_16mb/2026-03-20_11L_XSA4_EMA_Int6_MLP3x_WD04_1.1271/README.md) |
-| 11L Efficient Partial XSA | 1.1307 | unnir | On PR #198: Efficient Partial XSA on the deepest 3 layers | 2026-03-20 | [info](records/track_10min_16mb/2026-03-20_11L_EfficientPartialXSA_FA3_SWA120/README.md) |
-| 10L Int5-MLP + BigramHash(10240) | 1.1428 | thwu1 | 10 layers, mixed int5/int6 quantization, BigramHash(10240), SWA(0.4), WD=0.04 | 2026-03-20 | [info](records/track_10min_16mb/2026-03-20_10L_Int5MLP_MuonWD04_SWA50/README.md) |
-| Int6 MLP3x + SmearGate + BigramHash | 1.1458 | Raahil Shah | 3x MLP + SmearGate + BigramHash + OrthoInit + Muon WD + SWA | 2026-03-20 | [info](records/track_10min_16mb/2026-03-20_Int6_MLP3x_SmearGate_BigramHash_MuonWD_SWA/README.md) |
-| 11L MLP3x + Int6 QAT | 1.1502 | aruniyer | 11 layers, 3x MLP, int6 QAT, zstd-22, WD=0.04, sliding eval | 2026-03-20 | [info](records/track_10min_16mb/2026-03-19_MLP3x_QAT_Int6_SlidingWindow/README.md) |
-| SmearGate + OrthoInit + Muon WD | 1.1556 | aquariouseworkman | SmearGate + BigramHash + 3x MLP + int6 STE QAT + sliding eval | 2026-03-19 | [info](records/track_10min_16mb/2026-03-19_smeargate_orthoinit_muonwd/README.md) |
-| Ternary Quantization | 1.1570 | Ciprian-Florin Ifrim | 73.7M params quantized to 1 0 -1 + misc arch changes | 2026-03-24 | [info](records/track_10min_16mb/2026-03-24_74M_Ternary_UNet_FP8_10L_8192BPE_YaRN_NeoMuon/README.md) |
-| 10L Int6 QAT + Zstd MLP2.6x | 1.1586 | yahya010 | 10 layers, int6 QAT + zstd-22, MLP 1344, Muon 0.99, sliding eval | 2026-03-19 | [info](records/track_10min_16mb/2026-03-19_Seq2048_FP16Emb_TunedLR/README.md) |
-| Mixed Quant + Sliding Window Eval | 1.1630 | aquariouseworkman | Int6 block weights + int8 embeddings + 3x MLP + sliding eval | 2026-03-19 | [info](records/track_10min_16mb/2026-03-19_MixedQuant_Int6Int8_SlidingWindow/README.md) |
-| Muon WD + 10 layer | 1.1748 | notapplica | Includes prev. wins + Spectral embed init + resid mix | 2026-03-19 | [info](records/track_10min_16mb/2026-03-19_SlidingWindow_FP16Emb_10L_MuonWD_OvertoneInit/README.md) |
-| Sliding Window Eval | 1.1925 | Matthew Li | Sliding window evaluation at stride=64, increasing context for eval | 2026-03-19 | [info](records/track_10min_16mb/2026-03-19_SlidingWindowEval/README.md) |
-| Lora TTT | 1.1928 | samacqua | Test-time training with LORAs | 2026-03-19 | [info](records/track_10min_16mb/2026-03-17_LoRA_TTT/README.md) |
-| 4k seq length| 1.2014 | Spokane Way | 4k seq length + better hypers | 2026-03-19 | [info](records/track_10min_16mb/2026-03-19_TrainingOptSeq4096/README.md) |
-| 2048 seq length | 1.206 | Spokane Way | 2048 seq length (train + val) | 2026-03-18 | [info](records/track_10min_16mb/2026-03-18_LongContextSeq2048/README.md) |
-| int6 mixed precision | 1.2147 | Nan Liu | 10 layers, mixed int8/int6 | 2026-03-18 | [info](records/track_10min_16mb/2026-03-19_10L_MixedPrecision/README.md) |
-| fp16 Embed | 1.2197 | Renier Velazco | FP16 Tied Embedding + LR/Warmdown Tuning | 2026-03-18 | [info](records/track_10min_16mb/2026-03-18_FP16Embed_WD3600/README.md) |
-| Naive Baseline | 1.2244 | Baseline | 9layer 512dim 1024vocab TiedEmbeddings 4 KV heads | 2026-03-18 | [info](records/track_10min_16mb/2026-03-17_NaiveBaseline/README.md) |
+## What I learned
 
-#### Unlimited Compute Leaderboard & Non-record Submissions
+- **The exported model is the result.** Full-precision validation can misrepresent ternary model quality. A quantized proxy and the final export/reload evaluation were more useful signals.
+- **Precision placement matters.** Protecting the tail MLP was a useful alternative to simply widening every ternary MLP. The experiment ledger also contains configurations that improved quality but exceeded the byte cap.
+- **More training does not always help.** The pure ternary branch's 25k extension scored worse than its 20k checkpoint.
+- **Resume behavior needs explicit checks.** A checkpoint saved after learning-rate warmdown can resume at zero learning rate. The successful recurrence continuation used an explicit extension scale.
 
-| Run | Score | Author | Summary | Date | Info |
-|-----|------:|--------|---------|------|------|
-| 1 Bit Quantization | 1.1239 | Ciprian-Florin Ifrim | 106M params quantized to 1 bit + misc arch changes + 2hr training | 2026-03-24 | [info](records/track_non_record_16mb/2026-03-24_106M_Binary_Asymmetric_UNet_FP8_15L_8192BPE_YaRN_NeoMuon_Smear/README.md) |
-| 4-Hour Baseline | 1.2074 | Will DePue | Testing unlimited compute, 4 hours on 8xH100 | 2026-03-18 | [info](records/track_non_record_16mb/2026-03-18_Quasi10Bfrom50B_SP1024_9x512_KV4_4h_pgut3/README.md) |
+The [results discussion](docs/RESULTS.md) includes negative experiments and distinguishes observations from untested ideas.
 
-#### Requests for PRs
+## Inspect or rerun
 
-Breakthrough ideas are rarely immediately state-of-the-art, instead, they're developed slowly, first demonstrating signs-of-life, iterated on, then only ultimately optimized on the systems side. Don't get discouraged if a new algorithm doesn't instantly beat the best leaderboard run or even the naive baseline. If you have an idea you believe in, consider ignoring step times early on: once you prove you can beat the baseline in the same # of steps you can then start focusing on how to also make it fast.
-
-We'd love to see weird & creative ideas in the challenge, since you never know what may work in the end. Most likely, these will be a good fit in our unlimited compute leaderboard as non-record submissions. We have some requests for what we'd love to see people implement:
-
-- [x] 1-bit quantization - [implementation](records/track_non_record_16mb/2026-03-24_106M_Binary_Asymmetric_UNet_FP8_15L_8192BPE_YaRN_NeoMuon_Smear/README.md)
-- [x] Ternary quantization - [implementation](records/track_10min_16mb/2026-03-24_74M_Ternary_UNet_FP8_10L_8192BPE_YaRN_NeoMuon/README.md)
-- [ ] JEPA
-- [ ] Text diffusion
-- [ ] H-net tokenization
-- [ ] Universal transformer - [We have lots of depth recurrence submissions, but I'd love to see one 4 hour
-- [ ] Megakernels
-- [ ] State-space models, E2E TTT, super long context for evaluation or training 
-- [ ] Learning adapters on random linear maps
-
-## Getting Started
-
-### Training Your First Model (Mac with Apple Silicon)
-
-If you have an Apple laptop or desktop with Apple Silicon, we've set up a simple MLX training script to help you start iterating locally.
-
-If you don't have a Mac with Apple Silicon, you can run an adapted version of this script without MLX support. Just ask [Codex](https://openai.com/codex/) to refactor it; the change is straightforward. It may still be fairly slow, so we recommend jumping straight to cloud GPUs with Runpod.
-
-First, clone the repository, create a fresh Python environment, and install the packages needed for the MLX path plus dataset download:
+No GPU is needed to read the logs or compare the completed results:
 
 ```bash
-git clone https://github.com/openai/parameter-golf.git
+git clone https://github.com/shasank0001/parameter-golf.git
 cd parameter-golf
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install mlx numpy sentencepiece huggingface-hub datasets tqdm
+python3 tools/compare_runs.py \
+  records/track_non_record_16mb/2026-03-27_15L_Ternary_MLPOnly_20k/train.log \
+  records/track_non_record_16mb/2026-04-03_15L_HybridTail_Seq1536_20k_1x5090/train.log
 ```
 
-Download our cached version of FineWeb with the 1024-token vocabulary:
+For CUDA setup, data download, and the two-stage recurrence training recipe, use the [reproduction guide](docs/REPRODUCING.md). Historical checkpoints and compressed weights are not bundled; the published evidence consists of source snapshots, logs, and metadata.
 
-```bash
-python3 data/cached_challenge_fineweb.py --variant sp1024 --train-shards 10
-```
+## Repository map
 
-This populates `./data/datasets/fineweb10B_sp1024/` and `./data/tokenizers/`.
-By default this downloads the full validation split plus 80 training shards (8B tokens). For a smaller local smoke subset, pass `--train-shards 1`, for example `python3 data/cached_challenge_fineweb.py --variant sp1024 --train-shards 1`.
+| Path | Purpose |
+| --- | --- |
+| [`docs/RESULTS.md`](docs/RESULTS.md) | Results, measurement conventions, and experiment lessons |
+| [`docs/REPRODUCING.md`](docs/REPRODUCING.md) | Setup and recurrence training recipe |
+| [`records/track_non_record_16mb/`](records/track_non_record_16mb/) | Completed personal experiments alongside inherited community records; use the links above for my three runs |
+| [`tools/compare_runs.py`](tools/compare_runs.py) | Compare logged training losses and final metrics |
+| [`train_gpt.py`](train_gpt.py), [`train_gpt_mlx.py`](train_gpt_mlx.py) | Inherited competition starting points; featured experiments use the snapshots in their record folders |
+| [`data/`](data/) | Competition data download and tokenizer workflows |
+| [`COMPETITION.md`](COMPETITION.md) | Archived competition README, including the community leaderboard |
 
-Then run a small MLX training job:
+## Credits and license
 
-```bash
-RUN_ID=mlx_smoke \
-ITERATIONS=200 \
-TRAIN_BATCH_TOKENS=8192 \
-VAL_LOSS_EVERY=0 \
-VAL_BATCH_SIZE=8192 \
-python3 train_gpt_mlx.py
-```
-
-Validation always runs on the full `fineweb_val_*` split, which is the fixed first-50k-document set. The smoke command above skips periodic validation and just prints the final `val_loss` and `val_bpb` once at the end.
-
-### Scaling Up to a Remote Machine
-
-Once you're happy with your local tests, or you want more compute, switch to a remote CUDA machine.
-
-You can rent GPUs from anywhere, but OpenAI is partnering with Runpod to make setup as easy as possible.  
-
-#### Launching a 1xH100 Pod
-
-1. First, [create a Runpod account](https://console.runpod.io/deploy). You should also set up an SSH key in the Settings tab on the left so you can connect to your remote machine. If you're new to this, ask Codex to help you set it up.
-
-2. Once you've set up your account, create a new GPU Cloud Pod. You can choose whichever GPU SKU you'd like. Final leaderboard submissions must run in under 10 minutes on 8xH100s (specifically the SXM variant), but we strongly recommend testing and running experiments on cheaper SKUs first, since an 8xH100 box can cost around $20/hour.
-
-3. Let's start with a 1xH100 pod. Deploy using the official Parameter Golf template: [Launch Template](https://console.runpod.io/deploy?template=y5cejece4j&ref=nl2r56th). Enable SSH terminal access, leaving the other settings at their defaults. Deploy your pod and SSH into it once it's up. You should land in `/workspace/`.
-
-On your remote machine, clone the repo onto local disk. All Python dependencies are already pre-installed in the image.
-
-```bash
-cd /workspace
-git clone https://github.com/openai/parameter-golf.git
-cd parameter-golf
-```
-
-Download our cached version of FineWeb. We'll use the 1024-token vocabulary for now.
-
-```bash
-python3 data/cached_challenge_fineweb.py --variant sp1024
-```
-
-This defaults to the full validation split plus 80 training shards (8B tokens). If you only want a smaller subset while iterating, pass `--train-shards N`, for example `--train-shards 1`.
-
-Launch your first training run. Note that we're passing `nproc_per_node=1` because we're running on a single H100 GPU in this case.
-
-```bash
-RUN_ID=baseline_sp1024 \
-DATA_PATH=./data/datasets/fineweb10B_sp1024/ \
-TOKENIZER_PATH=./data/tokenizers/fineweb_1024_bpe.model \
-VOCAB_SIZE=1024 \
-torchrun --standalone --nproc_per_node=1 train_gpt.py
-```
-
-By default, `train_gpt.py` keeps its ~10 minute wallclock cap. If you want a longer run, override it explicitly, for example `MAX_WALLCLOCK_SECONDS=0`.
-
-By default, this command prints `train_loss` step logs during training and prints `val_loss`, `val_bpb`, and compressed model size in the final `final_int8_zlib_roundtrip` lines at the end. If you want periodic validation logs during the run, set `VAL_LOSS_EVERY`, for example `VAL_LOSS_EVERY=200`. For the baseline config, the final `val_bpb` should land around ~1.2 with a compressed model size under 16MB.
-
-For dataset export, tokenizer export, and docs-cache rebuild instructions, see [data/README.md](data/README.md).
-
-Evaluation will be in the RunPod environment with all packages installed. `requirements.txt` is provided as a reference if you want to self-setup.
-
-## FAQ
-
-**What exactly counts toward the 16MB artifact size?**
-
-The submission artifact is computed as code bytes plus compressed model bytes. All counted code should live in the `train_gpt.py` script.
-The cap is decimal 16MB, i.e. 16,000,000 total bytes, not 16 MiB / 16,777,216 bytes.
-No external downloads, training dataset access, or network calls are allowed during evaluation. The artifact must be fully self-contained and reproducible.
-
-**Are scores independently verified by OpenAI?**
-
-We're not automatically verifying every submission, but we will verify the top leaderboard entries over time. Any non-reproducible results can be disqualified, and issues reproducing submissions should be raised on the PR. If you find an issue with a record on the leaderboard or find a record isn't reproducible, please let us know and add an Github Issue describing your findings.
-
-**What counts as 'external compute'? For example, is it fair to tune my hyperparameters offline?**
-
-There's no perfectly clear answer here and it's hard to draw a clean line around what does or does not count as external compute. For now, we're reserving the right to disqualify runs that are not in the spirit of the challenge. Tuning your Adam hyperparameters across a bunch of runs is fine, but if there's evidence that you're sneaking in additional compute unfairly, such as brute-forcing ridiculous seeds, we won't allow it. Use your best judgment and there's no penalty for asking questions.
-
-**What are the restrictions on evaluation?**
-
-We won't accept submissions that take more than 10 minutes on 8xH100 to evaluate (Note: This limit is in addition to the 10 minutes of training time allowed!), but otherwise you're free to evaluate however. As with modded-nanogpt, we allow evaluation at any sequence length. And, obviously, you aren't allowed to access any training data during evaluation, unless you pay for those bits in the <16MB limit. We encourage competitors to push the bounds of evaluation methods as aggressively as with training methods. You CANNOT access validation data during training, e.g. by compressing it into your 16mb with "paid prefix".
-
-If it isn't abundantly obvious: You can't cheat on your test loss. You can't cheat by training on the validation set before you evaluate on the validation set. The validation language around test-time training has been confusing people: you are only allowed to test-time train on validation set tokens _you've already evaluated your model on_, since those tokens have already been graded!
-
-**What is the process for accepting new submissions?**
-
-Since all submissions are public, we're accepting record submissions chronologically depending on their PR creation time. The leaderboard may take time to update due to verification and review of submissions, so pay consideration to what the current SOTA PR is when submitting. As explained below, submissions should exceed the SOTA record with sufficient statistical significance in order to be accepted for the leaderboard. Otherwise, submissions may be accepted as 'non-record submissions' given they are sufficiently unique or interesting.
-
-**Can I import XYZ package or library?**
-
-Yes, you're free to import any package or library you want, so long as it does not unjustly violate the rules on evaluation, compute, training time, code size or otherwise. Just include a requirements.txt in your records folder and mention setup instructions in your README.md. Since you don't pay for bits imported in Python libraries, limitations clearly apply: You can't sneak in extra compute, capabilities, or massively increase effective code size with custom libraries, but importing FlashAttention, etc. is completely fine.
-
-
-## Submission Process
-
-New SOTA records must fulfill the following criteria:
-
-1. They must beat the existing SOTA by at least 0.005 nats. As in modded-nanogpt, because of inter-run variance all submissions must provide enough run logs to show at `p < 0.01` that they achieved the required 0.005-nat improvement. For submissions that improve speed through systems optimization without changing the ML, this requirement is waived.
-
-2. If changes are made to the tokenizer or dataset, prove with certainty that the val_bpb is correctly calculated. Submissions that edit the tokenizer will be examined much more carefully, since bugs may unjustly improve your score.
-
-3. Reproducibly run in under 10 minutes on 8xH100s.
-
-All submissions should be made as a pull request that only adds a new folder to the appropriate `/records` subfolder and includes the following files. Submissions without the full set of requirements will not be accepted.
-
-1. A README.md file that explains the submission in reasonable detail.
-
-2. A `submission.json` file (see the example runs) that includes your name, GitHub ID, `val_bpb`, and related metadata.
-
-3. A train log, automatically produced by your script. Please demonstrate a statistically significant win. Most often, submitting an average over 3 training runs is sufficient.
-
-4. A `train_gpt.py` script and any other dependencies. Note: this must successfully compile and run within the records folder. Broken scripts will not be accepted.
-
-### Non-record Submissions
-
-Submissions are also open to unique and interesting approaches that might not beat the existing SOTA, but still satisfy the 16MB artifact limit. We strongly encourage participants to submit implementations for weird or out-of-the-box ideas, in-progress or unoptimized solutions, so long as they run successfully, or even interesting negative results. We're excited to see what you come up with. We'll still maintain a high bar for non-record submissions, so be sure to justify your ideas and results in detail when submitting.
-
-We also accept non-record submissions to an unlimited compute track for runs that are not intended to meet the 10-minute cutoff. Just note as such in your README file.
-
-Non-record submissions should be made in the same fashion as SOTA records, as described above.
-
-#### PRs on Core Code
-
-The `train_gpt.py` and `train_gpt_mlx.py` scripts are intended as good launching-off points for new participants, not SOTA configs. We'll accept PRs that tune, improve, or simplify these scripts without significantly increasing complexity, but the best models should stay in the `/records` folder.
-
-## Support
-
-
-Join the [OpenAI Discord server](https://discord.com/invite/openai) and visit the Parameter Golf channels (#parameter-golf-discussions, #parameter-golf-announcements) and ask questions.
-
-This repository adapts code from `modded-nanogpt`, see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for attribution.
+Project experiments by [Shasank](https://github.com/shasank0001). Forked from [OpenAI Parameter Golf](https://github.com/openai/parameter-golf), which adapts [modded-nanogpt](https://github.com/KellerJordan/modded-nanogpt). Community record folders retain their original attribution. See the [MIT license](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).

@@ -1,0 +1,12 @@
+Source: full80_baseline_rescue_resume_20260324_185621.txt
+Finalization excerpt from the completed local control run.
+
+Serialized model: 98437419 bytes
+Code size: 74309 bytes
+Total submission size: 98511728 bytes
+pre_final_artifact_preview:15777592 bytes valid_under_16mb=True
+Serialized model mixed_lowbit+zstd: 15703283 bytes
+Total submission size int8+zlib: 15777592 bytes
+final_eval_mode:sliding_window stride:64 batch_seqs:16
+final_int8_zlib_roundtrip val_loss:2.0571 val_bpb:1.2183 eval_time:8009358ms
+final_int8_zlib_roundtrip_exact val_loss:2.05708412 val_bpb:1.21832265
